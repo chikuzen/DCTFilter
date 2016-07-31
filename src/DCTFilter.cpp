@@ -25,7 +25,7 @@ PERFORMANCE OF THIS SOFTWARE.
 #include <avs/win.h>
 #include <avs/alignment.h>
 
-#define DCT_FILTER_VERSION "0.0.1"
+#define DCT_FILTER_VERSION "0.1.0"
 
 
 typedef IScriptEnvironment ise_t;
@@ -48,7 +48,7 @@ class DCTFilter : public GenericVideoFilter {
     dct_idct_func_t mainProc;
 
 public:
-    DCTFilter(PClip child, double* factor, int chroma, int opt);
+    DCTFilter(PClip child, double* factor, int diag_count, int chroma, int opt);
     PVideoFrame __stdcall GetFrame(int n, ise_t* env);
     ~DCTFilter();
     int __stdcall SetCacheHints(int hints, int)
@@ -58,7 +58,7 @@ public:
 };
 
 
-DCTFilter::DCTFilter(PClip c, double* f, int ch, int opt)
+DCTFilter::DCTFilter(PClip c, double* f, int diag_count, int ch, int opt)
         : GenericVideoFilter(c), chroma(ch)
 {
     if (!vi.IsPlanar()) {
@@ -92,9 +92,18 @@ DCTFilter::DCTFilter(PClip c, double* f, int ch, int opt)
     if (!factors) {
         throw std::runtime_error("failed to create table of factors.");
     }
-    for (int y = 0; y < 8; ++y) {
-        for (int x = 0; x < 8; ++x) {
-            factors[y * 8 + x] = static_cast<float>(f[y] * f[x] * 0.1250);
+
+    if (diag_count == 0) {
+        for (int y = 0; y < 8; ++y) {
+            for (int x = 0; x < 8; ++x) {
+                factors[y * 8 + x] = static_cast<float>(f[y] * f[x] * 0.1250);
+            }
+        }
+    } else {
+        for (int y = 0; y < 8; ++y) {
+            for (int x = 0; x < 8; ++x) {
+                factors[y * 8 + x] = (x + y) > (14 - diag_count) ? 0 : 0.1250f;
+            }
         }
     }
 
@@ -106,6 +115,14 @@ DCTFilter::DCTFilter(PClip c, double* f, int ch, int opt)
         planes[0] = PLANAR_G;
         planes[1] = PLANAR_B;
         planes[2] = PLANAR_R;
+    }
+
+    if (opt == 0 || !has_sse2()) {
+        opt = 0;
+    } else if (opt == 1 || !has_avx2()) {
+        opt = 1;
+    } else {
+        opt = 2;
     }
 
     mainProc = get_main_proc(vi.ComponentSize(), opt);
@@ -170,19 +187,29 @@ static AVSValue __cdecl create(AVSValue args, void*, ise_t* env)
         }
     }
 
-    int opt = args[10].AsInt(2);
-    if (opt == 0 || !has_sse2()) {
-        opt = 0;
-    } else if (opt == 1 || !has_avx2()) {
-        opt = 1;
-    } else {
-        opt = 2;
+    try {
+        return new DCTFilter(
+            args[0].AsClip(), f, 0, args[9].AsInt(1), args[10].AsInt(2));
+    } catch (std::runtime_error& e) {
+        env->ThrowError("DCTFilter: %s", e.what());
+    }
+    return AVSValue();
+}
+
+
+static AVSValue __cdecl create_d(AVSValue args, void*, ise_t* env)
+{
+    int diag_count = args[1].AsInt();
+    if (diag_count < 1 || diag_count > 14) {
+        env->ThrowError("DCTFilterD: diagonals count must be 1 to 14.");
     }
 
     try {
-        return new DCTFilter(args[0].AsClip(), f, args[9].AsInt(1), opt);
+        return new DCTFilter(
+            args[0].AsClip(), nullptr, diag_count, args[2].AsInt(1),
+            args[3].AsInt(2));
     } catch (std::runtime_error& e) {
-        env->ThrowError("DCTFilter: %s", e.what());
+        env->ThrowError("DCTFilterD: %s", e.what());
     }
     return AVSValue();
 }
@@ -197,6 +224,7 @@ AvisynthPluginInit3(ise_t* env, const AVS_Linkage* const vectors)
     AVS_linkage = vectors;
 
     env->AddFunction("DCTFilter", "cffffffff[chroma]i[opt]i", create, nullptr);
+    env->AddFunction("DCTFilterD", "ci[chroma]i[opt]i", create_d, nullptr);
 
     return "a rewite of DctFilter for Avisynth+ ver." DCT_FILTER_VERSION;
 }
