@@ -298,50 +298,6 @@ float_to_dst_8x8_sse2(const float* srcp, T* dstp, int dpitch, int bits) noexcept
 }
 
 
-static void transpose_8x8_sse(const float* s, float* d) noexcept
-{
-    __m128 s0 = _mm_load_ps(s);
-    __m128 s1 = _mm_load_ps(s + 8);
-    __m128 s2 = _mm_load_ps(s + 16);
-    __m128 s3 = _mm_load_ps(s + 24);
-    _MM_TRANSPOSE4_PS(s0, s1, s2, s3);
-    _mm_store_ps(d, s0);
-    _mm_store_ps(d + 8, s1);
-    _mm_store_ps(d + 16, s2);
-    _mm_store_ps(d + 24, s3);
-
-    s0 = _mm_load_ps(s + 4);
-    s1 = _mm_load_ps(s + 12);
-    s2 = _mm_load_ps(s + 20);
-    s3 = _mm_load_ps(s + 28);
-    _MM_TRANSPOSE4_PS(s0, s1, s2, s3);
-    _mm_store_ps(d + 32, s0);
-    _mm_store_ps(d + 40, s1);
-    _mm_store_ps(d + 48, s2);
-    _mm_store_ps(d + 56, s3);
-
-    s0 = _mm_load_ps(s + 32);
-    s1 = _mm_load_ps(s + 40);
-    s2 = _mm_load_ps(s + 48);
-    s3 = _mm_load_ps(s + 56);
-    _MM_TRANSPOSE4_PS(s0, s1, s2, s3);
-    _mm_store_ps(d + 4, s0);
-    _mm_store_ps(d + 12, s1);
-    _mm_store_ps(d + 20, s2);
-    _mm_store_ps(d + 28, s3);
-
-    s0 = _mm_load_ps(s + 36);
-    s1 = _mm_load_ps(s + 44);
-    s2 = _mm_load_ps(s + 52);
-    s3 = _mm_load_ps(s + 60);
-    _MM_TRANSPOSE4_PS(s0, s1, s2, s3);
-    _mm_store_ps(d + 36, s0);
-    _mm_store_ps(d + 44, s1);
-    _mm_store_ps(d + 52, s2);
-    _mm_store_ps(d + 60, s3);
-}
-
-
 static void dct_8x8_llm_sse(const float* s, float* d) noexcept
 {
     static const __m128 xr1 = _mm_set1_ps(r1);
@@ -353,22 +309,24 @@ static void dct_8x8_llm_sse(const float* s, float* d) noexcept
     static const __m128 xisqrt2 = _mm_set1_ps(isqrt2);
 
     for (int i = 0; i < 2; ++i) {
-        __m128 xmm0 = _mm_load_ps(s);
-        __m128 xmm1 = _mm_load_ps(s + 56);
-        __m128 t0 = _mm_add_ps(xmm0, xmm1);
-        __m128 t7 = _mm_sub_ps(xmm0, xmm1);
-        xmm0 = _mm_load_ps(s + 8);
-        xmm1 = _mm_load_ps(s + 48);
-        __m128 t1 = _mm_add_ps(xmm0, xmm1);
-        __m128 t6 = _mm_sub_ps(xmm0, xmm1);
-        xmm0 = _mm_load_ps(s + 16);
-        xmm1 = _mm_load_ps(s + 40);
-        __m128 t2 = _mm_add_ps(xmm0, xmm1);
-        __m128 t5 = _mm_sub_ps(xmm0, xmm1);
-        xmm0 = _mm_load_ps(s + 24);
-        xmm1 = _mm_load_ps(s + 32);
-        __m128 t3 = _mm_add_ps(xmm0, xmm1);
-        __m128 t4 = _mm_sub_ps(xmm0, xmm1);
+        __m128 s0 = _mm_load_ps(s);
+        __m128 s1 = _mm_load_ps(s + 8);
+        __m128 s2 = _mm_load_ps(s + 16);
+        __m128 s3 = _mm_load_ps(s + 24);
+        _MM_TRANSPOSE4_PS(s0, s1, s2, s3);
+        __m128 s4 = _mm_load_ps(s + 4);
+        __m128 s5 = _mm_load_ps(s + 12);
+        __m128 s6 = _mm_load_ps(s + 20);
+        __m128 s7 = _mm_load_ps(s + 28);
+        _MM_TRANSPOSE4_PS(s4, s5, s6, s7);
+        __m128 t0 = _mm_add_ps(s0, s7);
+        __m128 t7 = _mm_sub_ps(s0, s7);
+        __m128 t1 = _mm_add_ps(s1, s6);
+        __m128 t6 = _mm_sub_ps(s1, s6);
+        __m128 t2 = _mm_add_ps(s2, s5);
+        __m128 t5 = _mm_sub_ps(s2, s5);
+        __m128 t3 = _mm_add_ps(s3, s4);
+        __m128 t4 = _mm_sub_ps(s3, s4);
 
         __m128 c0 = _mm_add_ps(t0, t3);
         __m128 c3 = _mm_sub_ps(t0, t3);
@@ -394,7 +352,7 @@ static void dct_8x8_llm_sse(const float* s, float* d) noexcept
         _mm_store_ps(d + 8, _mm_add_ps(c0, c3));
         _mm_store_ps(d + 56, _mm_sub_ps(c0, c3));
 
-        s += 4;
+        s += 32;
         d += 4;
     }
 }
@@ -402,51 +360,39 @@ static void dct_8x8_llm_sse(const float* s, float* d) noexcept
 
 static void idct_8x8_llm_sse(const float* s, float* d) noexcept
 {
-    static const __m128 xr3 = _mm_set1_ps(r3);
-    static const __m128 xr6 = _mm_set1_ps(r6);
-    static const __m128 xrt1 = _mm_set1_ps(-r3 - r5);
-    static const __m128 xrt2 = _mm_set1_ps(-r3 + r5);
-    static const __m128 xrt3 = _mm_set1_ps(-r3 + r7);
-    static const __m128 xrt4 = _mm_set1_ps(-r3 - r1);
-    static const __m128 xrt5 = _mm_set1_ps(-r1 + r3 + r5 - r7);
-    static const __m128 xrt6 = _mm_set1_ps(r1 + r3 - r5 + r7);
-    static const __m128 xrt7 = _mm_set1_ps(r1 + r3 + r5 - r7);
-    static const __m128 xrt8 = _mm_set1_ps(r1 + r3 - r5 - r7);
-    static const __m128 xrt9 = _mm_set1_ps(r2 + r6);
-    static const __m128 xrta = _mm_set1_ps(r2 - r6);
-
     for (int i = 0; i < 2; ++i) {
+        __m128 s0 = _mm_load_ps(s);
         __m128 s1 = _mm_load_ps(s + 8);
+        __m128 s2 = _mm_load_ps(s + 16);
         __m128 s3 = _mm_load_ps(s + 24);
-        __m128 s5 = _mm_load_ps(s + 40);
-        __m128 s7 = _mm_load_ps(s + 56);
+        _MM_TRANSPOSE4_PS(s0, s1, s2, s3);
+        __m128 s4 = _mm_load_ps(s + 4);
+        __m128 s5 = _mm_load_ps(s + 12);
+        __m128 s6 = _mm_load_ps(s + 20);
+        __m128 s7 = _mm_load_ps(s + 28);
+        _MM_TRANSPOSE4_PS(s4, s5, s6, s7);
 
         __m128 z0 = _mm_add_ps(s1, s7);
         __m128 z1 = _mm_add_ps(s3, s5);
 
-        __m128 z4 = _mm_mul_ps(_mm_add_ps(z0, z1), xr3);
+        __m128 z4 = _mm_mul_ps(_mm_add_ps(z0, z1), _mm_set1_ps(r3));
 
-        __m128 z2 = _mm_add_ps(_mm_mul_ps(xrt1, _mm_add_ps(s3, s7)), z4);
-        __m128 z3 = _mm_add_ps(_mm_mul_ps(xrt2, _mm_add_ps(s1, s5)), z4);
-        z0 = _mm_mul_ps(z0, xrt3);
-        z1 = _mm_mul_ps(z1, xrt4);
+        __m128 z2 = _mm_add_ps(_mm_mul_ps(_mm_set1_ps(-r3 - r5), _mm_add_ps(s3, s7)), z4);
+        __m128 z3 = _mm_add_ps(_mm_mul_ps(_mm_set1_ps(-r3 + r5), _mm_add_ps(s1, s5)), z4);
+        z0 = _mm_mul_ps(z0, _mm_set1_ps(-r3 + r7));
+        z1 = _mm_mul_ps(z1, _mm_set1_ps(-r3 - r1));
 
-        __m128 b3 = _mm_add_ps(_mm_mul_ps(s7, xrt5), _mm_add_ps(z0, z2));
-        __m128 b2 = _mm_add_ps(_mm_mul_ps(s5, xrt6), _mm_add_ps(z1, z3));
-        __m128 b1 = _mm_add_ps(_mm_mul_ps(s3, xrt7), _mm_add_ps(z1, z2));
-        __m128 b0 = _mm_add_ps(_mm_mul_ps(s1, xrt8), _mm_add_ps(z0, z3));
-
-        __m128 s0 = _mm_load_ps(s);
-        __m128 s2 = _mm_load_ps(s + 16);
-        __m128 s4 = _mm_load_ps(s + 32);
-        __m128 s6 = _mm_load_ps(s + 48);
+        __m128 b3 = _mm_add_ps(_mm_mul_ps(s7, _mm_set1_ps(-r1 + r3 + r5 - r7)), _mm_add_ps(z0, z2));
+        __m128 b2 = _mm_add_ps(_mm_mul_ps(s5, _mm_set1_ps(r1 + r3 - r5 + r7)), _mm_add_ps(z1, z3));
+        __m128 b1 = _mm_add_ps(_mm_mul_ps(s3, _mm_set1_ps(r1 + r3 + r5 - r7)), _mm_add_ps(z1, z2));
+        __m128 b0 = _mm_add_ps(_mm_mul_ps(s1, _mm_set1_ps(r1 + r3 - r5 - r7)), _mm_add_ps(z0, z3));
 
         z0 = _mm_add_ps(s0, s4);
         z1 = _mm_sub_ps(s0, s4);
-        z4 = _mm_mul_ps(_mm_add_ps(s2, s6), xr6);
+        z4 = _mm_mul_ps(_mm_add_ps(s2, s6), _mm_set1_ps(r6));
 
-        z2 = _mm_sub_ps(z4, _mm_mul_ps(s6, xrt9));
-        z3 = _mm_add_ps(_mm_mul_ps(s2, xrta), z4);
+        z2 = _mm_sub_ps(z4, _mm_mul_ps(s6, _mm_set1_ps(r2 + r6)));
+        z3 = _mm_add_ps(_mm_mul_ps(s2, _mm_set1_ps(r2 - r6)), z4);
         
         __m128 a0 = _mm_add_ps(z0, z3);
         __m128 a3 = _mm_sub_ps(z0, z3);
@@ -462,7 +408,7 @@ static void idct_8x8_llm_sse(const float* s, float* d) noexcept
         _mm_store_ps(d + 24, _mm_add_ps(a3, b3));
         _mm_store_ps(d + 32, _mm_sub_ps(a3, b3));
 
-        s += 4;
+        s += 32;
         d += 4;
     }
 }
@@ -609,7 +555,7 @@ idct_8x8_llm_fma3(__m256& s0, __m256& s1, __m256& s2, __m256& s3, __m256& s4,
 
 template <typename T>
 static __forceinline void
-stroe_x8_to_dst_avx2(const __m256& src, T* dstp, int bits) noexcept
+store_x8_to_dst_avx2(const __m256& src, T* dstp, int bits) noexcept
 {
     constexpr float setval = sizeof(T) == 4 ? 0.1250f
         : ((1LLU << (sizeof(T) * 8)) - 1) * 0.1250f;
@@ -713,9 +659,7 @@ static void dct_idct_simd(const uint8_t* srcp, uint8_t* dstp, int src_pitch,
 #endif
             src_to_float_8x8_sse2(s + x, buff0, src_pitch, bits);
 
-            transpose_8x8_sse(buff0, buff1);
-            dct_8x8_llm_sse(buff1, buff0);
-            transpose_8x8_sse(buff0, buff1);
+            dct_8x8_llm_sse(buff0, buff1);
             dct_8x8_llm_sse(buff1, buff0);
 
             for (int i = 0; i < 64; i += 4) {
@@ -724,9 +668,7 @@ static void dct_idct_simd(const uint8_t* srcp, uint8_t* dstp, int src_pitch,
                 _mm_store_ps(buff0 + i, _mm_mul_ps(t0, t1));
             }
 
-            transpose_8x8_sse(buff0, buff1);
-            idct_8x8_llm_sse(buff1, buff0);
-            transpose_8x8_sse(buff0, buff1);
+            idct_8x8_llm_sse(buff0, buff1);
             idct_8x8_llm_sse(buff1, buff0);
 
             float_to_dst_8x8_sse2(buff0, d + x, dst_pitch, bits);
