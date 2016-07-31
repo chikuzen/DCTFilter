@@ -259,8 +259,8 @@ static __forceinline __m128i packus_epi32(const __m128i& x, const __m128i& y)
     t0 = _mm_shufflehi_epi16(t0, _MM_SHUFFLE(3, 1, 2, 0));
     t0 = _mm_srli_si128(t0, 4);
     __m128i t1 = _mm_shufflelo_epi16(y, _MM_SHUFFLE(2, 0, 3, 1));
-    t1 = _mm_shufflehi_epi16(y, _MM_SHUFFLE(3, 1, 2, 0));
-    t1 = _mm_srli_si128(y, 4);
+    t1 = _mm_shufflehi_epi16(t1, _MM_SHUFFLE(3, 1, 2, 0));
+    t1 = _mm_srli_si128(t1, 4);
     return _mm_unpacklo_epi64(t0, t1);
 }
 
