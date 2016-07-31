@@ -3,7 +3,7 @@
 	This plugin is a rewrite of DctFilter for avisynth.
 
 ### Version:
-	0.0.0
+	0.0.1
 
 ### Requirement:
 	- Windows Vista sp2 or later
