@@ -25,7 +25,7 @@ PERFORMANCE OF THIS SOFTWARE.
 #include <avs/win.h>
 #include <avs/alignment.h>
 
-#define DCT_FILTER_VERSION "0.0.0"
+#define DCT_FILTER_VERSION "0.0.1"
 
 
 typedef IScriptEnvironment ise_t;
@@ -74,6 +74,9 @@ DCTFilter::DCTFilter(PClip c, double* f, int ch, int opt)
 
     if (numPlanes == 1 || chroma < 0 || chroma > 2) {
         chroma = 2;
+    }
+    if (chroma != 1) {
+        numPlanes = 1;
     }
 
     if (chroma == 1) {
@@ -177,7 +180,7 @@ static AVSValue __cdecl create(AVSValue args, void*, ise_t* env)
     }
 
     try {
-        return new DCTFilter(args[0].AsClip(), f, args[9].AsInt(2), opt);
+        return new DCTFilter(args[0].AsClip(), f, args[9].AsInt(1), opt);
     } catch (std::runtime_error& e) {
         env->ThrowError("DCTFilter: %s", e.what());
     }
