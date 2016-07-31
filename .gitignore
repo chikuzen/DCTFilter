@@ -2,6 +2,7 @@ vs2015/.vs/*
 vs2015/Debug/*
 vs2015/Release/*
 vs2015/x64/*
+archives/*
 
 *.sln
 *.db

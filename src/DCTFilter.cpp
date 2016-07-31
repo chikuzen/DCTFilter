@@ -33,7 +33,10 @@ typedef IScriptEnvironment ise_t;
 typedef void(*dct_idct_func_t)(
     const uint8_t*, uint8_t*, int, int, int, int, float*, const float*, int);
 
-extern dct_idct_func_t get_main_proc(int component_size);
+extern dct_idct_func_t get_main_proc(int component_size, int opt);
+
+extern bool has_sse2();
+extern bool has_avx2();
 
 
 class DCTFilter : public GenericVideoFilter {
@@ -45,7 +48,7 @@ class DCTFilter : public GenericVideoFilter {
     dct_idct_func_t mainProc;
 
 public:
-    DCTFilter(PClip child, double* factor, int chroma);
+    DCTFilter(PClip child, double* factor, int chroma, int opt);
     PVideoFrame __stdcall GetFrame(int n, ise_t* env);
     ~DCTFilter();
     int __stdcall SetCacheHints(int hints, int)
@@ -55,7 +58,7 @@ public:
 };
 
 
-DCTFilter::DCTFilter(PClip c, double* f, int ch)
+DCTFilter::DCTFilter(PClip c, double* f, int ch, int opt)
         : GenericVideoFilter(c), chroma(ch)
 {
     if (!vi.IsPlanar()) {
@@ -102,7 +105,7 @@ DCTFilter::DCTFilter(PClip c, double* f, int ch)
         planes[2] = PLANAR_R;
     }
 
-    mainProc = get_main_proc(vi.ComponentSize());
+    mainProc = get_main_proc(vi.ComponentSize(), opt);
 }
 
 
@@ -152,6 +155,7 @@ PVideoFrame __stdcall DCTFilter::GetFrame(int n, ise_t* env)
     return dst;
 }
 
+
 static AVSValue __cdecl create(AVSValue args, void*, ise_t* env)
 {
     double f[8];
@@ -163,8 +167,17 @@ static AVSValue __cdecl create(AVSValue args, void*, ise_t* env)
         }
     }
 
+    int opt = args[10].AsInt(2);
+    if (opt == 0 || !has_sse2()) {
+        opt = 0;
+    } else if (opt == 1 || !has_avx2()) {
+        opt = 1;
+    } else {
+        opt = 2;
+    }
+
     try {
-        return new DCTFilter(args[0].AsClip(), f, args[9].AsInt(1));
+        return new DCTFilter(args[0].AsClip(), f, args[9].AsInt(2), opt);
     } catch (std::runtime_error& e) {
         env->ThrowError("DCTFilter: %s", e.what());
     }
@@ -180,7 +193,7 @@ AvisynthPluginInit3(ise_t* env, const AVS_Linkage* const vectors)
 {
     AVS_linkage = vectors;
 
-    env->AddFunction("DCTFilter", "cffffffff[chroma]i", create, nullptr);
+    env->AddFunction("DCTFilter", "cffffffff[chroma]i[opt]i", create, nullptr);
 
     return "a rewite of DctFilter for Avisynth+ ver." DCT_FILTER_VERSION;
 }
