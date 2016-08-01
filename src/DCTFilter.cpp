@@ -36,6 +36,7 @@ typedef void(*dct_idct_func_t)(
 extern dct_idct_func_t get_main_proc(int component_size, int opt);
 
 extern bool has_sse2();
+extern bool has_sse41();
 extern bool has_avx2();
 
 
@@ -119,10 +120,12 @@ DCTFilter::DCTFilter(PClip c, double* f, int diag_count, int ch, int opt)
 
     if (opt == 0 || !has_sse2()) {
         opt = 0;
-    } else if (opt == 1 || !has_avx2()) {
+    } else if (opt == 1 || !has_sse41()) {
         opt = 1;
-    } else {
+    } else if (opt == 2 || !has_avx2()){
         opt = 2;
+    } else {
+        opt = 3;
     }
 
     mainProc = get_main_proc(vi.ComponentSize(), opt);
@@ -189,7 +192,7 @@ static AVSValue __cdecl create(AVSValue args, void*, ise_t* env)
 
     try {
         return new DCTFilter(
-            args[0].AsClip(), f, 0, args[9].AsInt(1), args[10].AsInt(2));
+            args[0].AsClip(), f, 0, args[9].AsInt(1), args[10].AsInt(-1));
     } catch (std::runtime_error& e) {
         env->ThrowError("DCTFilter: %s", e.what());
     }
@@ -207,7 +210,7 @@ static AVSValue __cdecl create_d(AVSValue args, void*, ise_t* env)
     try {
         return new DCTFilter(
             args[0].AsClip(), nullptr, diag_count, args[2].AsInt(1),
-            args[3].AsInt(2));
+            args[3].AsInt(-1));
     } catch (std::runtime_error& e) {
         env->ThrowError("DCTFilterD: %s", e.what());
     }

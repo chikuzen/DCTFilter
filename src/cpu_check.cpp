@@ -141,6 +141,11 @@ bool has_sse2()
     return (get_simd_support_info() & CPU_SSE2_SUPPORT) != 0;
 }
 
+bool has_sse41()
+{
+    return (get_simd_support_info() & CPU_SSE4_1_SUPPORT) != 0;
+}
+
 bool has_avx2()
 {
     uint32_t flags = CPU_AVX2_SUPPORT | CPU_FMA3_SUPPORT;

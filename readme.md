@@ -3,7 +3,7 @@
 	This plugin is a rewrite of DctFilter for avisynth.
 
 ### Version:
-	0.1.0
+	0.2.0
 
 ### Requirement:
 	- Windows Vista sp2 or later
@@ -29,7 +29,8 @@ DCTFilter(clip, float, float, float, float, float, float, float, float, int "chr
 	opt: Specify which CPU optimization are used.
 		0 = use c++ routine.
 		1 = use SSE2 + SSE routine if possible. when SSE2 can't be used, fallback to 0.
-		2 = use AVX2 + FMA3 + AVX routine if possible. WHen AVX2 can't be used, fallback to 1.(default)
+		2 = use SSE4.1 + SSE2 + SSE routine if possible. when SSE4.1 can't be used, fallback to 1.
+		others = use AVX2 + FMA3 + AVX routine if possible. WHen AVX2 can't be used, fallback to 2.(default)
 
 Note: the first 9 parameters are unnamed and do not have a default so they must be specified.
 

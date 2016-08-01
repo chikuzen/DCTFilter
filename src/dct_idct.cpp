@@ -28,8 +28,8 @@ PERFORMANCE OF THIS SOFTWARE.
 
 
 template <typename T>
-static void src_to_float_8x8_cpp(const T* srcp, float* dstp, int spitch,
-        int bits) noexcept
+static void src_to_float_8x8_cpp(
+        const T* srcp, float* dstp, int spitch, int bits) noexcept
 {
     const float factor = 1.0f / ((1 << bits) - 1);
 
@@ -44,8 +44,8 @@ static void src_to_float_8x8_cpp(const T* srcp, float* dstp, int spitch,
 
 
 template <typename T>
-static void float_to_dst_8x8_cpp(const float* srcp, T* dstp, int dpitch,
-        int bits) noexcept
+static void float_to_dst_8x8_cpp(
+        const float* srcp, T* dstp, int dpitch, int bits) noexcept
 {
     const float factor = sizeof(T) == 4 ? 0.1250f : ((1 << bits) - 1) * 0.1250f;
 
@@ -168,9 +168,10 @@ static void idct_8x8_llm_cpp(const float* s, float* d) noexcept
 
 
 template <typename T>
-static void dct_idct_cpp(const uint8_t* srcp, uint8_t* dstp, int src_pitch,
-        int dst_pitch, int rowsize, int height, float* buff0,
-        const float* factors, int bits) noexcept
+static void dct_idct_cpp(
+        const uint8_t* srcp, uint8_t* dstp, int src_pitch, int dst_pitch,
+        int rowsize, int height, float* buff0, const float* factors, int bits)
+        noexcept
 {
     const T* s = reinterpret_cast<const T*>(srcp);
     T* d = reinterpret_cast<T*>(dstp);
@@ -208,8 +209,8 @@ static void dct_idct_cpp(const uint8_t* srcp, uint8_t* dstp, int src_pitch,
 /******************* SIMD version ***************************/
 
 template <typename T>
-static __forceinline void
-load_x8_to_float_sse2(const T* srcp, __m128& s0, __m128& s1)
+static __forceinline void load_x8_to_float_sse2(
+        const T* srcp, __m128& s0, __m128& s1) noexcept
 {
     if (sizeof(T) == 4) {
         s0 = _mm_loadu_ps(reinterpret_cast<const float*>(srcp));
@@ -218,29 +219,27 @@ load_x8_to_float_sse2(const T* srcp, __m128& s0, __m128& s1)
     }
 
     const __m128i zero = _mm_setzero_si128();
-
+    __m128i s;
     if (sizeof(T) == 2) {
-        __m128i s = _mm_loadu_si128(reinterpret_cast<const __m128i*>(srcp));
-        s0 = _mm_cvtepi32_ps(_mm_unpacklo_epi16(s, zero));
-        s1 = _mm_cvtepi32_ps(_mm_unpackhi_epi16(s, zero));
-        return;
+        s = _mm_loadu_si128(reinterpret_cast<const __m128i*>(srcp));
+    } else {
+        s = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(srcp));
+        s = _mm_unpacklo_epi8(s, zero);
     }
-    __m128i s = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(srcp));
-    s = _mm_unpacklo_epi8(s, zero);
     s0 = _mm_cvtepi32_ps(_mm_unpacklo_epi16(s, zero));
     s1 = _mm_cvtepi32_ps(_mm_unpackhi_epi16(s, zero));
 }
 
 
 template <typename T>
-static void
-src_to_float_8x8_sse2(const T* srcp, float* dstp, int spitch, int bits) noexcept
+static void src_to_float_8x8_sse2(
+        const T* srcp, float* dstp, int spitch, int bits) noexcept
 {
-    const __m128 factor = _mm_set1_ps(1.0f / ((1 << bits) - 1));
+    const __m128 factor = _mm_set1_ps(1.0f / ((1LLU << (sizeof(T) * 2)) - 1));
 
     for (int y = 0; y < 8; ++y) {
         __m128 s0, s1;
-        load_x8_to_float_sse2<T>(srcp, s0, s1);
+        load_x8_to_float_sse2(srcp, s0, s1);
         if (sizeof(T) != 4) {
             s0 = _mm_mul_ps(s0, factor);
             s1 = _mm_mul_ps(s1, factor);
@@ -253,8 +252,13 @@ src_to_float_8x8_sse2(const T* srcp, float* dstp, int spitch, int bits) noexcept
 }
 
 
-static __forceinline __m128i packus_epi32(const __m128i& x, const __m128i& y)
+template <bool HAS_SSE41>
+static __forceinline __m128i packus_epi32(
+        const __m128i& x, const __m128i& y) noexcept
 {
+    if (HAS_SSE41) {
+        return _mm_packus_epi32(x, y);
+    }
     __m128i t0 = _mm_shufflelo_epi16(x, _MM_SHUFFLE(2, 0, 3, 1));
     t0 = _mm_shufflehi_epi16(t0, _MM_SHUFFLE(3, 1, 2, 0));
     t0 = _mm_srli_si128(t0, 4);
@@ -265,15 +269,14 @@ static __forceinline __m128i packus_epi32(const __m128i& x, const __m128i& y)
 }
 
 
-template <typename T>
-static void
-float_to_dst_8x8_sse2(const float* srcp, T* dstp, int dpitch, int bits) noexcept
+template <typename T, bool HAS_SSE41>
+static void float_to_dst_8x8_sse2(
+        const float* srcp, T* dstp, int dpitch, int bits) noexcept
 {
     constexpr float setval = sizeof(T) == 4 ? 0.1250f
-        : ((1LLU << (sizeof(T) * 8)) - 1) * 0.1250f;
+        : ((1LLU << (sizeof(T) * 2)) - 1) * 0.1250f;
 
     const __m128 factor = _mm_set1_ps(setval);
-    const __m128i mask = _mm_setr_epi32(0, -1, 0, -1);
 
     for (int y = 0; y < 8; ++y) {
         __m128 s0 = _mm_mul_ps(_mm_load_ps(srcp), factor);
@@ -284,7 +287,7 @@ float_to_dst_8x8_sse2(const float* srcp, T* dstp, int dpitch, int bits) noexcept
         } else {
             __m128i d0 = _mm_cvtps_epi32(s0);
             __m128i d1 = _mm_cvtps_epi32(s1);
-            d0 = packus_epi32(d0, d1);
+            d0 = packus_epi32<HAS_SSE41>(d0, d1);
             if (sizeof(T) == 2) {
                 _mm_store_si128(reinterpret_cast<__m128i*>(dstp), d0);
             } else {
@@ -298,7 +301,20 @@ float_to_dst_8x8_sse2(const float* srcp, T* dstp, int dpitch, int bits) noexcept
 }
 
 
-static void dct_8x8_llm_sse(const float* s, float* d) noexcept
+static __forceinline void transpose4(__m128& a, __m128& b, __m128& c, __m128& d) noexcept
+{
+    __m128i ac01 = _mm_unpacklo_epi32(_mm_castps_si128(a), _mm_castps_si128(c));
+    __m128i ac23 = _mm_unpackhi_epi32(_mm_castps_si128(a), _mm_castps_si128(c));
+    __m128i bd01 = _mm_unpacklo_epi32(_mm_castps_si128(b), _mm_castps_si128(d));
+    __m128i bd23 = _mm_unpackhi_epi32(_mm_castps_si128(b), _mm_castps_si128(d));
+    a = _mm_castsi128_ps(_mm_unpacklo_epi32(ac01, bd01));
+    b = _mm_castsi128_ps(_mm_unpackhi_epi32(ac01, bd01));
+    c = _mm_castsi128_ps(_mm_unpacklo_epi32(ac23, bd23));
+    d = _mm_castsi128_ps(_mm_unpackhi_epi32(ac23, bd23));
+}
+
+
+static void dct_8x8_llm_with_transpose_sse(const float* s, float* d) noexcept
 {
     static const __m128 xr1 = _mm_set1_ps(r1);
     static const __m128 xr2 = _mm_set1_ps(r2);
@@ -309,16 +325,18 @@ static void dct_8x8_llm_sse(const float* s, float* d) noexcept
     static const __m128 xisqrt2 = _mm_set1_ps(isqrt2);
 
     for (int i = 0; i < 2; ++i) {
-        __m128 s0 = _mm_load_ps(s);
-        __m128 s1 = _mm_load_ps(s + 8);
+        __m128 s0 = _mm_load_ps(s +  0);
+        __m128 s1 = _mm_load_ps(s +  8);
         __m128 s2 = _mm_load_ps(s + 16);
         __m128 s3 = _mm_load_ps(s + 24);
         _MM_TRANSPOSE4_PS(s0, s1, s2, s3);
-        __m128 s4 = _mm_load_ps(s + 4);
+
+        __m128 s4 = _mm_load_ps(s +  4);
         __m128 s5 = _mm_load_ps(s + 12);
         __m128 s6 = _mm_load_ps(s + 20);
         __m128 s7 = _mm_load_ps(s + 28);
         _MM_TRANSPOSE4_PS(s4, s5, s6, s7);
+
         __m128 t0 = _mm_add_ps(s0, s7);
         __m128 t7 = _mm_sub_ps(s0, s7);
         __m128 t1 = _mm_add_ps(s1, s6);
@@ -349,7 +367,7 @@ static void dct_8x8_llm_sse(const float* s, float* d) noexcept
         c0 = _mm_mul_ps(_mm_add_ps(c0, c2), xisqrt2);
         c3 = _mm_mul_ps(_mm_add_ps(c1, c3), xisqrt2);
 
-        _mm_store_ps(d + 8, _mm_add_ps(c0, c3));
+        _mm_store_ps(d +  8, _mm_add_ps(c0, c3));
         _mm_store_ps(d + 56, _mm_sub_ps(c0, c3));
 
         s += 32;
@@ -358,15 +376,16 @@ static void dct_8x8_llm_sse(const float* s, float* d) noexcept
 }
 
 
-static void idct_8x8_llm_sse(const float* s, float* d) noexcept
+static void idct_8x8_llm_with_transpose_sse(const float* s, float* d) noexcept
 {
     for (int i = 0; i < 2; ++i) {
-        __m128 s0 = _mm_load_ps(s);
-        __m128 s1 = _mm_load_ps(s + 8);
+        __m128 s0 = _mm_load_ps(s +  0);
+        __m128 s1 = _mm_load_ps(s +  8);
         __m128 s2 = _mm_load_ps(s + 16);
         __m128 s3 = _mm_load_ps(s + 24);
         _MM_TRANSPOSE4_PS(s0, s1, s2, s3);
-        __m128 s4 = _mm_load_ps(s + 4);
+
+        __m128 s4 = _mm_load_ps(s +  4);
         __m128 s5 = _mm_load_ps(s + 12);
         __m128 s6 = _mm_load_ps(s + 20);
         __m128 s7 = _mm_load_ps(s + 28);
@@ -414,11 +433,48 @@ static void idct_8x8_llm_sse(const float* s, float* d) noexcept
 }
 
 
+template <typename T, bool HAS_SSE41>
+static void dct_idct_sse2(
+        const uint8_t* srcp, uint8_t* dstp, int src_pitch, int dst_pitch,
+        int rowsize, int height, float* buff0, const float* factors, int bits)
+        noexcept
+{
+    const T* s = reinterpret_cast<const T*>(srcp);
+    T* d = reinterpret_cast<T*>(dstp);
+    float* buff1 = buff0 + 64;
+    rowsize /= sizeof(T);
+    src_pitch /= sizeof(T);
+    dst_pitch /= sizeof(T);
+
+    for (int y = 0; y < height; y += 8) {
+        for (int x = 0; x < rowsize; x += 8) {
+
+            src_to_float_8x8_sse2(s + x, buff0, src_pitch, bits);
+
+            dct_8x8_llm_with_transpose_sse(buff0, buff1);
+            dct_8x8_llm_with_transpose_sse(buff1, buff0);
+
+            for (int i = 0; i < 64; i += 4) {
+                __m128 t0 = _mm_load_ps(buff0 + i);
+                __m128 t1 = _mm_load_ps(factors + i);
+                _mm_store_ps(buff0 + i, _mm_mul_ps(t0, t1));
+            }
+
+            idct_8x8_llm_with_transpose_sse(buff0, buff1);
+            idct_8x8_llm_with_transpose_sse(buff1, buff0);
+
+            float_to_dst_8x8_sse2<T, HAS_SSE41>(buff0, d + x, dst_pitch, bits);
+        }
+        s += src_pitch * 8;
+        d += dst_pitch * 8;
+    }
+}
+
+
 #if defined(__AVX2__)
 
 template <typename T>
-static __forceinline __m256
-load_and_cvt_to_float_x8_avx2(const T* srcp)
+static __forceinline __m256 load_and_cvt_to_float_x8_avx2(const T* srcp)  noexcept
 {
     if (sizeof(T) == 4) {
         return _mm256_loadu_ps(reinterpret_cast<const float*>(srcp));
@@ -432,9 +488,9 @@ load_and_cvt_to_float_x8_avx2(const T* srcp)
 }
 
 
-static __forceinline void
-transpose_8x8_avx(__m256& a, __m256& b, __m256& c, __m256& d, __m256& e,
-        __m256& f, __m256& g, __m256& h) noexcept
+static __forceinline void transpose_8x8_avx(
+        __m256& a, __m256& b, __m256& c, __m256& d, __m256& e, __m256& f,
+        __m256& g, __m256& h) noexcept
 {
     __m256 ac0145 = _mm256_unpacklo_ps(a, c); // a0 c0 a1 c1 a4 c4 a5 c5
     __m256 ac2367 = _mm256_unpackhi_ps(a, c); // a2 c2 a3 c3 a6 c6 a7 c7
@@ -466,8 +522,9 @@ transpose_8x8_avx(__m256& a, __m256& b, __m256& c, __m256& d, __m256& e,
 
 
 static __forceinline void
-dct_8x8_llm_fma3(__m256& s0, __m256& s1, __m256& s2, __m256& s3, __m256& s4,
-        __m256& s5, __m256& s6, __m256& s7) noexcept
+dct_8x8_llm_fma3(
+        __m256& s0, __m256& s1, __m256& s2, __m256& s3, __m256& s4, __m256& s5,
+        __m256& s6, __m256& s7) noexcept
 {
     static const __m256 xr1 = _mm256_set1_ps(r1);
     static const __m256 xr2 = _mm256_set1_ps(r2);
@@ -513,9 +570,9 @@ dct_8x8_llm_fma3(__m256& s0, __m256& s1, __m256& s2, __m256& s3, __m256& s4,
 }
 
 
-static __forceinline void
-idct_8x8_llm_fma3(__m256& s0, __m256& s1, __m256& s2, __m256& s3, __m256& s4,
-        __m256& s5, __m256& s6, __m256& s7) noexcept
+static __forceinline void idct_8x8_llm_fma3(
+        __m256& s0, __m256& s1, __m256& s2, __m256& s3, __m256& s4, __m256& s5,
+        __m256& s6, __m256& s7) noexcept
 {
     __m256 z0 = _mm256_add_ps(s1, s7);
     __m256 z1 = _mm256_add_ps(s3, s5);
@@ -554,8 +611,8 @@ idct_8x8_llm_fma3(__m256& s0, __m256& s1, __m256& s2, __m256& s3, __m256& s4,
 
 
 template <typename T>
-static __forceinline void
-store_x8_to_dst_avx2(const __m256& src, T* dstp, int bits) noexcept
+static __forceinline void store_x8_to_dst_avx2(
+        const __m256& src, T* dstp, int bits) noexcept
 {
     constexpr float setval = sizeof(T) == 4 ? 0.1250f
         : ((1LLU << (sizeof(T) * 8)) - 1) * 0.1250f;
@@ -580,19 +637,20 @@ store_x8_to_dst_avx2(const __m256& src, T* dstp, int bits) noexcept
 }
 
 template <typename T>
-static void
-dct_idct_8x8_avx2(const T* srcp, T* dstp, const float* f, int spitch, int dpitch, int bits) noexcept
+static void dct_idct_8x8_avx2(
+        const T* srcp, T* dstp, const float* f, int spitch, int dpitch,
+        int bits) noexcept
 {
     static const __m256 factor = _mm256_set1_ps(1.0f / ((1 << bits) - 1));
 
-    __m256 s0 = load_and_cvt_to_float_x8_avx2<T>(srcp + spitch * 0);
-    __m256 s1 = load_and_cvt_to_float_x8_avx2<T>(srcp + spitch * 1);
-    __m256 s2 = load_and_cvt_to_float_x8_avx2<T>(srcp + spitch * 2);
-    __m256 s3 = load_and_cvt_to_float_x8_avx2<T>(srcp + spitch * 3);
-    __m256 s4 = load_and_cvt_to_float_x8_avx2<T>(srcp + spitch * 4);
-    __m256 s5 = load_and_cvt_to_float_x8_avx2<T>(srcp + spitch * 5);
-    __m256 s6 = load_and_cvt_to_float_x8_avx2<T>(srcp + spitch * 6);
-    __m256 s7 = load_and_cvt_to_float_x8_avx2<T>(srcp + spitch * 7);
+    __m256 s0 = load_and_cvt_to_float_x8_avx2(srcp + spitch * 0);
+    __m256 s1 = load_and_cvt_to_float_x8_avx2(srcp + spitch * 1);
+    __m256 s2 = load_and_cvt_to_float_x8_avx2(srcp + spitch * 2);
+    __m256 s3 = load_and_cvt_to_float_x8_avx2(srcp + spitch * 3);
+    __m256 s4 = load_and_cvt_to_float_x8_avx2(srcp + spitch * 4);
+    __m256 s5 = load_and_cvt_to_float_x8_avx2(srcp + spitch * 5);
+    __m256 s6 = load_and_cvt_to_float_x8_avx2(srcp + spitch * 6);
+    __m256 s7 = load_and_cvt_to_float_x8_avx2(srcp + spitch * 7);
 
     if (sizeof(T) != 4) {
         s0 = _mm256_mul_ps(s0, factor);
@@ -634,13 +692,12 @@ dct_idct_8x8_avx2(const T* srcp, T* dstp, const float* f, int spitch, int dpitch
     store_x8_to_dst_avx2<T>(s7, dstp + 7 * dpitch, bits);
 }
 
-#endif
 
-
-template <typename T, bool USE_AVX2>
-static void dct_idct_simd(const uint8_t* srcp, uint8_t* dstp, int src_pitch,
-    int dst_pitch, int rowsize, int height, float* buff0,
-    const float* factors, int bits) noexcept
+template <typename T>
+static void dct_idct_avx2(
+        const uint8_t* srcp, uint8_t* dstp, int src_pitch, int dst_pitch,
+        int rowsize, int height, float* buff0, const float* factors, int bits)
+        noexcept
 {
     const T* s = reinterpret_cast<const T*>(srcp);
     T* d = reinterpret_cast<T*>(dstp);
@@ -651,57 +708,47 @@ static void dct_idct_simd(const uint8_t* srcp, uint8_t* dstp, int src_pitch,
 
     for (int y = 0; y < height; y += 8) {
         for (int x = 0; x < rowsize; x += 8) {
-#if defined(__AVX2__)
-            if (USE_AVX2) {
-                dct_idct_8x8_avx2(s + x, d + x, factors, src_pitch, dst_pitch, bits);
-                continue;
-            }
-#endif
-            src_to_float_8x8_sse2(s + x, buff0, src_pitch, bits);
-
-            dct_8x8_llm_sse(buff0, buff1);
-            dct_8x8_llm_sse(buff1, buff0);
-
-            for (int i = 0; i < 64; i += 4) {
-                __m128 t0 = _mm_load_ps(buff0 + i);
-                __m128 t1 = _mm_load_ps(factors + i);
-                _mm_store_ps(buff0 + i, _mm_mul_ps(t0, t1));
-            }
-
-            idct_8x8_llm_sse(buff0, buff1);
-            idct_8x8_llm_sse(buff1, buff0);
-
-            float_to_dst_8x8_sse2(buff0, d + x, dst_pitch, bits);
+            dct_idct_8x8_avx2(s + x, d + x, factors, src_pitch, dst_pitch, bits);
         }
         s += src_pitch * 8;
         d += dst_pitch * 8;
     }
 }
+#endif
 
 
 typedef void(*dct_idct_func_t)(
     const uint8_t*, uint8_t*, int, int, int, int, float*, const float*, int);
 
-dct_idct_func_t get_main_proc(int component_size, int opt)
+dct_idct_func_t get_main_proc(int component_size, int opt) noexcept
 {
 #if defined(__AVX2__)
-    if (opt > 1) {
+    if (opt > 2) {
         if (component_size == 1) {
-            return dct_idct_simd<uint8_t, true>;
+            return dct_idct_avx2<uint8_t>;
         } else if (component_size == 2) {
-            return dct_idct_simd<uint16_t, true>;
+            return dct_idct_avx2<uint16_t>;
         } else {
-            return dct_idct_simd<float, true>;
+            return dct_idct_avx2<float>;
         }
     }
 #endif
+    if (opt > 1) {
+        if (component_size == 1) {
+            return dct_idct_sse2<uint8_t, true>;
+        } else if (component_size == 2) {
+            return dct_idct_sse2<uint16_t, true>;
+        } else {
+            return dct_idct_sse2<float, false>;
+        }
+    }
     if (opt > 0) {
         if (component_size == 1) {
-            return dct_idct_simd<uint8_t, false>;
+            return dct_idct_sse2<uint8_t, false>;
         } else if (component_size == 2) {
-            return dct_idct_simd<uint16_t, false>;
+            return dct_idct_sse2<uint16_t, false>;
         } else {
-            return dct_idct_simd<float, false>;
+            return dct_idct_sse2<float, false>;
         }
     }
     if (component_size == 1) {
@@ -712,3 +759,4 @@ dct_idct_func_t get_main_proc(int component_size, int opt)
     }
     return dct_idct_cpp<float>;
 }
+
