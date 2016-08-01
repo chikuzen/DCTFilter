@@ -1,14 +1,13 @@
 ##DCTFilter
-### DCT / iDCT filter for Avisynth+
 	This plugin is a rewrite of DctFilter for avisynth.
 
 ### Version:
-	0.2.0
+	0.3.0
 
 ### Requirement:
 	- Windows Vista sp2 or later
 	- SSE2 capable CPU
-	- Avisynth+MT r2085 or later
+	- Avisynth 2.60 / Avisynth+MT r2085 or later
 	- Microsoft VisualC++ Redistributable Package 2015.
 
 ### Usage:
@@ -64,9 +63,3 @@ PERFORMANCE OF THIS SOFTWARE.
 
 ### Source code:
 	https://github.com/chikuzen/DCTFilter
-
-
-
-
-
-

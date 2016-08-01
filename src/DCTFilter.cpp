@@ -21,11 +21,17 @@ PERFORMANCE OF THIS SOFTWARE.
 
 #include <cstdint>
 #include <stdexcept>
+#include <malloc.h>
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#define NOGDI
+#define VC_EXTRALEAN
+#include <windows.h>
 #include <avisynth.h>
-#include <avs/win.h>
-#include <avs/alignment.h>
 
-#define DCT_FILTER_VERSION "0.1.0"
+
+
+#define DCT_FILTER_VERSION "0.3.0"
 
 
 typedef IScriptEnvironment ise_t;
@@ -44,12 +50,14 @@ class DCTFilter : public GenericVideoFilter {
     int numPlanes;
     int planes[3];
     int chroma;
+    bool isPlus;
     float* factors;
 
     dct_idct_func_t mainProc;
 
 public:
-    DCTFilter(PClip child, double* factor, int diag_count, int chroma, int opt);
+    DCTFilter(PClip child, double* factor, int diag_count, int chroma, int opt,
+              bool is_plus);
     PVideoFrame __stdcall GetFrame(int n, ise_t* env);
     ~DCTFilter();
     int __stdcall SetCacheHints(int hints, int)
@@ -59,8 +67,9 @@ public:
 };
 
 
-DCTFilter::DCTFilter(PClip c, double* f, int diag_count, int ch, int opt)
-        : GenericVideoFilter(c), chroma(ch)
+DCTFilter::DCTFilter(PClip c, double* f, int diag_count, int ch, int opt,
+                     bool ip)
+        : GenericVideoFilter(c), chroma(ch), isPlus(ip)
 {
     if (!vi.IsPlanar()) {
         throw std::runtime_error("input is not planar format.");
@@ -80,16 +89,27 @@ DCTFilter::DCTFilter(PClip c, double* f, int diag_count, int ch, int opt)
         numPlanes = 1;
     }
 
+    if (vi.IsYUV()) {
+        planes[0] = PLANAR_Y;
+        planes[1] = PLANAR_U;
+        planes[2] = PLANAR_V;
+    } else {
+        planes[0] = PLANAR_G;
+        planes[1] = PLANAR_B;
+        planes[2] = PLANAR_R;
+    }
+
     if (chroma == 1) {
-        int w = vi.width >> vi.GetPlaneWidthSubsampling(PLANAR_U);
-        int h = vi.height >> vi.GetPlaneHeightSubsampling(PLANAR_U);
+        int w = vi.width >> vi.GetPlaneWidthSubsampling(planes[1]);
+        int h = vi.height >> vi.GetPlaneHeightSubsampling(planes[1]);
         if ((w | h) & 7) {
             throw std::runtime_error(
                 "second plane's width and height must be mod 8.");
         }
     }
 
-    factors = reinterpret_cast<float*>(avs_malloc(64 * sizeof(float), 32));
+    size_t size = (64 + (isPlus ? 0 : 128)) * sizeof(float);
+    factors = reinterpret_cast<float*>(_aligned_malloc(size, 32));
     if (!factors) {
         throw std::runtime_error("failed to create table of factors.");
     }
@@ -108,16 +128,6 @@ DCTFilter::DCTFilter(PClip c, double* f, int diag_count, int ch, int opt)
         }
     }
 
-    if (vi.IsYUV()) {
-        planes[0] = PLANAR_Y;
-        planes[1] = PLANAR_U;
-        planes[2] = PLANAR_V;
-    } else {
-        planes[0] = PLANAR_G;
-        planes[1] = PLANAR_B;
-        planes[2] = PLANAR_R;
-    }
-
     if (opt == 0 || !has_sse2()) {
         opt = 0;
     } else if (opt == 1 || !has_sse41()) {
@@ -128,28 +138,31 @@ DCTFilter::DCTFilter(PClip c, double* f, int diag_count, int ch, int opt)
         opt = 3;
     }
 
-    mainProc = get_main_proc(vi.ComponentSize(), opt);
+    mainProc = get_main_proc(vi.BytesFromPixels(1), opt);
 }
 
 
 DCTFilter::~DCTFilter()
 {
-    avs_free(factors);
+    _aligned_free(factors);
     factors = nullptr;
 }
 
 
 PVideoFrame __stdcall DCTFilter::GetFrame(int n, ise_t* env)
 {
-    auto env2 = static_cast<IScriptEnvironment2*>(env);
-
     auto src = child->GetFrame(n, env);
     auto dst = env->NewVideoFrame(vi, 32);
 
-    auto buff = reinterpret_cast<float*>(
-            env2->Allocate(128 * sizeof(float), 32, AVS_POOLED_ALLOC));
-    if (!buff) {
-        env->ThrowError("DCTFilter: failed to allocate temporal buffer.");
+    float* buff;
+    if (!isPlus) {
+        buff = factors + 64;
+    } else {
+        buff = reinterpret_cast<float*>(static_cast<IScriptEnvironment2*>(
+            env)->Allocate(128 * sizeof(float), 32, AVS_POOLED_ALLOC));
+        if (!buff) {
+            env->ThrowError("DCTFilter: failed to allocate temporal buffer.");
+        }
     }
 
     for (int p = 0; p < numPlanes; ++p) {
@@ -159,7 +172,7 @@ PVideoFrame __stdcall DCTFilter::GetFrame(int n, ise_t* env)
                  src->GetPitch(plane), dst->GetPitch(plane),
                  src->GetRowSize(plane), src->GetHeight(plane), buff, factors,
                  //vi.BitsPerComponent());
-                 vi.ComponentSize() * 8);
+                 vi.BytesFromPixels(1) * 8);
     }
 
     if (chroma == 0) {
@@ -173,7 +186,9 @@ PVideoFrame __stdcall DCTFilter::GetFrame(int n, ise_t* env)
                     src->GetReadPtr(planes[2]), spitch, rowsize, height);
     }
 
-    env2->Free(buff);
+    if (isPlus) {
+        static_cast<IScriptEnvironment2*>(env)->Free(buff);
+    }
 
     return dst;
 }
@@ -192,11 +207,12 @@ static AVSValue __cdecl create(AVSValue args, void*, ise_t* env)
 
     try {
         return new DCTFilter(
-            args[0].AsClip(), f, 0, args[9].AsInt(1), args[10].AsInt(-1));
+            args[0].AsClip(), f, 0, args[9].AsInt(1), args[10].AsInt(-1),
+            env->FunctionExists("SetFilterMTMode"));
     } catch (std::runtime_error& e) {
         env->ThrowError("DCTFilter: %s", e.what());
     }
-    return AVSValue();
+    return 0;
 }
 
 
@@ -210,11 +226,11 @@ static AVSValue __cdecl create_d(AVSValue args, void*, ise_t* env)
     try {
         return new DCTFilter(
             args[0].AsClip(), nullptr, diag_count, args[2].AsInt(1),
-            args[3].AsInt(-1));
+            args[3].AsInt(-1), env->FunctionExists("SetFilterMTMode"));
     } catch (std::runtime_error& e) {
         env->ThrowError("DCTFilterD: %s", e.what());
     }
-    return AVSValue();
+    return 0;
 }
 
 
@@ -229,5 +245,5 @@ AvisynthPluginInit3(ise_t* env, const AVS_Linkage* const vectors)
     env->AddFunction("DCTFilter", "cffffffff[chroma]i[opt]i", create, nullptr);
     env->AddFunction("DCTFilterD", "ci[chroma]i[opt]i", create_d, nullptr);
 
-    return "a rewite of DctFilter for Avisynth+ ver." DCT_FILTER_VERSION;
+    return "a rewite of DctFilter ver." DCT_FILTER_VERSION;
 }

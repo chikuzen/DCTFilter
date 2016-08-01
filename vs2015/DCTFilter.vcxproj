@@ -135,6 +135,9 @@
     <ClCompile Include="..\src\dct_idct.cpp" />
     <ClCompile Include="..\src\DCTFilter.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="..\src\DCTFilter.rc" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

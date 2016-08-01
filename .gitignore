@@ -9,6 +9,7 @@ archives/*
 *.opendb
 *.filters
 *.user
+*.aps
 
 *.dll
 *.exe
