@@ -36,14 +36,32 @@ PERFORMANCE OF THIS SOFTWARE.
 
 typedef IScriptEnvironment ise_t;
 
-typedef void(*dct_idct_func_t)(
+typedef void(*fdct_idct_func_t)(
     const uint8_t*, uint8_t*, int, int, int, int, float*, const float*, int);
 
-extern dct_idct_func_t get_main_proc(int component_size, int opt);
+extern fdct_idct_func_t get_main_proc(int component_size, int opt);
 
 extern bool has_sse2();
 extern bool has_sse41();
 extern bool has_avx2();
+
+
+static int check_opt(int opt)
+{
+    if (opt == 0 || !has_sse2()) {
+        return 0;
+    } else if (opt == 1 || !has_sse41()) {
+        return 1;
+#if !defined(__AVX2__)
+    }
+    return 2;
+#else
+    } else if (opt == 2 || !has_avx2()){
+        return 2;
+    }
+    return 3;
+#endif
+}
 
 
 class DCTFilter : public GenericVideoFilter {
@@ -52,8 +70,9 @@ class DCTFilter : public GenericVideoFilter {
     int chroma;
     bool isPlus;
     float* factors;
+    int bitsPerComponent;
 
-    dct_idct_func_t mainProc;
+    fdct_idct_func_t mainProc;
 
 public:
     DCTFilter(PClip child, double* factor, int diag_count, int chroma, int opt,
@@ -108,7 +127,12 @@ DCTFilter::DCTFilter(PClip c, double* f, int diag_count, int ch, int opt,
         }
     }
 
-    size_t size = (64 + (isPlus ? 0 : 128)) * sizeof(float);
+    opt = check_opt(opt);
+    if (opt == 3) {
+        isPlus = false;
+    }
+
+    size_t size = (64 + ((isPlus || opt == 3) ? 0 : 128)) * sizeof(float);
     factors = reinterpret_cast<float*>(_aligned_malloc(size, 32));
     if (!factors) {
         throw std::runtime_error("failed to create table of factors.");
@@ -128,17 +152,8 @@ DCTFilter::DCTFilter(PClip c, double* f, int diag_count, int ch, int opt,
         }
     }
 
-    if (opt == 0 || !has_sse2()) {
-        opt = 0;
-    } else if (opt == 1 || !has_sse41()) {
-        opt = 1;
-    } else if (opt == 2 || !has_avx2()){
-        opt = 2;
-    } else {
-        opt = 3;
-    }
-
     mainProc = get_main_proc(vi.BytesFromPixels(1), opt);
+    bitsPerComponent = vi.BytesFromPixels(1) * 8;
 }
 
 
@@ -171,8 +186,7 @@ PVideoFrame __stdcall DCTFilter::GetFrame(int n, ise_t* env)
         mainProc(src->GetReadPtr(plane), dst->GetWritePtr(plane),
                  src->GetPitch(plane), dst->GetPitch(plane),
                  src->GetRowSize(plane), src->GetHeight(plane), buff, factors,
-                 //vi.BitsPerComponent());
-                 vi.BytesFromPixels(1) * 8);
+                 bitsPerComponent);
     }
 
     if (chroma == 0) {

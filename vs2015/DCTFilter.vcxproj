@@ -103,6 +103,9 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <OmitFramePointers>true</OmitFramePointers>
+      <InlineFunctionExpansion>Default</InlineFunctionExpansion>
+      <Optimization>MaxSpeed</Optimization>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
     </ClCompile>
     <Link>
       <TargetMachine>MachineX86</TargetMachine>
