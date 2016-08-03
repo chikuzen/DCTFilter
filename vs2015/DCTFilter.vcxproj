@@ -83,6 +83,7 @@
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <Optimization>Disabled</Optimization>
       <FloatingPointModel>Fast</FloatingPointModel>
+      <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
     </ClCompile>
     <Link>
       <TargetMachine>MachineX86</TargetMachine>
@@ -135,11 +136,16 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\src\cpu_check.cpp" />
-    <ClCompile Include="..\src\dct_idct.cpp" />
+    <ClCompile Include="..\src\dct_4x4.cpp" />
+    <ClCompile Include="..\src\dct_8x8.cpp" />
     <ClCompile Include="..\src\DCTFilter.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\src\DCTFilter.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\src\dct.h" />
+    <ClInclude Include="..\src\resource.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

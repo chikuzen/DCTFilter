@@ -1,5 +1,5 @@
 /*
-dct.cpp
+dct_8x8.cpp
 
 This file is part of DCTFilter
 
@@ -25,6 +25,7 @@ PERFORMANCE OF THIS SOFTWARE.
 #else
 #include <smmintrin.h>
 #endif
+#include "dct.h"
 
 
 template <typename T>
@@ -162,13 +163,12 @@ static void idct_8x8_llm_cpp(const float* s, float* d) noexcept
 template <typename T>
 static void fdct_idct_cpp(
         const uint8_t* srcp, uint8_t* dstp, int src_pitch, int dst_pitch,
-        int rowsize, int height, float* buff0, const float* factors, int bits)
+        int width, int height, float* buff0, const float* factors, int bits)
         noexcept
 {
     const T* s = reinterpret_cast<const T*>(srcp);
     T* d = reinterpret_cast<T*>(dstp);
     float* buff1 = buff0 + 64;
-    rowsize /= sizeof(T);
     src_pitch /= sizeof(T);
     dst_pitch /= sizeof(T);
 
@@ -176,7 +176,7 @@ static void fdct_idct_cpp(
     const float f_out = 0.125f * ((1 << bits) - 1);
 
     for (int y = 0; y < height; y += 8) {
-        for (int x = 0; x < rowsize; x += 8) {
+        for (int x = 0; x < width; x += 8) {
 
             src_to_float_8x8_cpp<T>(s + x, buff0, src_pitch, f_in);
 
@@ -203,7 +203,7 @@ static void fdct_idct_cpp(
 
 /******************* SIMD version ***************************/
 
-static const float* get_factors_array_in(int bits)
+const float* get_factors_array_in(int bits) noexcept
 {
     constexpr float f08 = 1.0f / ((1 << 8) - 1);
     constexpr float f10 = 1.0f / ((1 << 10) - 1);
@@ -232,7 +232,7 @@ static const float* get_factors_array_in(int bits)
 }
 
 
-static const float* get_factors_array_out(int bits)
+static const float* get_factors_array_out(int bits) noexcept
 {
     constexpr float f08 = 0.1250f * ((1 << 8) - 1);
     constexpr float f10 = 0.1250f * ((1 << 10) - 1);
@@ -261,7 +261,7 @@ static const float* get_factors_array_out(int bits)
 }
 
 template <bool HAS_SSE41>
-static __forceinline __m128i packus_epi16(
+static __forceinline __m128i packus_epi32(
         const __m128i& x, const __m128i& y, int bits) noexcept
 {
     if (HAS_SSE41) {
@@ -334,7 +334,7 @@ static void float_to_dst_8x8_sse2(
             _mm_store_ps(reinterpret_cast<float*>(dstp), s0);
             _mm_store_ps(reinterpret_cast<float*>(dstp) + 4, s1);
         } else {
-            __m128i d0 = packus_epi16<HAS_SSE41>(
+            __m128i d0 = packus_epi32<HAS_SSE41>(
                 _mm_cvtps_epi32(s0), _mm_cvtps_epi32(s1), bits);
             if (sizeof(T) == 2) {
                 _mm_store_si128(reinterpret_cast<__m128i*>(dstp), d0);
@@ -471,13 +471,12 @@ static void idct_8x8_llm_with_transpose_sse(const float* s, float* d) noexcept
 template <typename T, bool HAS_SSE41>
 static void fdct_idct_sse2(
         const uint8_t* srcp, uint8_t* dstp, int src_pitch, int dst_pitch,
-        int rowsize, int height, float* buff0, const float* factors, int bits)
+        int width, int height, float* buff0, const float* factors, int bits)
         noexcept
 {
     const T* s = reinterpret_cast<const T*>(srcp);
     T* d = reinterpret_cast<T*>(dstp);
     float* buff1 = buff0 + 64;
-    rowsize /= sizeof(T);
     src_pitch /= sizeof(T);
     dst_pitch /= sizeof(T);
 
@@ -485,7 +484,7 @@ static void fdct_idct_sse2(
     static const float* out = get_factors_array_out(bits);
 
     for (int y = 0; y < height; y += 8) {
-        for (int x = 0; x < rowsize; x += 8) {
+        for (int x = 0; x < width; x += 8) {
 
             src_to_float_8x8_sse2(s + x, buff0, src_pitch, in);
 
@@ -726,12 +725,11 @@ static void fdct_idct_8x8_avx2(
 template <typename T>
 static void fdct_idct_avx2(
         const uint8_t* srcp, uint8_t* dstp, int src_pitch, int dst_pitch,
-        int rowsize, int height, float*, const float* factors, int bits)
+        int width, int height, float*, const float* factors, int bits)
         noexcept
 {
     const T* s = reinterpret_cast<const T*>(srcp);
     T* d = reinterpret_cast<T*>(dstp);
-    rowsize /= sizeof(T);
     src_pitch /= sizeof(T);
     dst_pitch /= sizeof(T);
 
@@ -739,7 +737,7 @@ static void fdct_idct_avx2(
     const float* out = get_factors_array_out(bits);
 
     for (int y = 0; y < height; y += 8) {
-        for (int x = 0; x < rowsize; x += 8) {
+        for (int x = 0; x < width; x += 8) {
             fdct_idct_8x8_avx2<T>(s + x, d + x, factors, src_pitch, dst_pitch, in, out);
         }
         s += src_pitch * 8;
@@ -749,10 +747,7 @@ static void fdct_idct_avx2(
 #endif
 
 
-typedef void(*fdct_idct_func_t)(
-    const uint8_t*, uint8_t*, int, int, int, int, float*, const float*, int);
-
-fdct_idct_func_t get_main_proc(int component_size, int opt) noexcept
+fdct_idct_func_t get_main_proc_8x8(int component_size, int opt) noexcept
 {
 #if defined(__AVX2__)
     if (opt > 2) {
