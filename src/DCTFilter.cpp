@@ -21,6 +21,7 @@ PERFORMANCE OF THIS SOFTWARE.
 
 #include <cstdint>
 #include <stdexcept>
+#include <algorithm>
 #include <malloc.h>
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -104,6 +105,9 @@ class DCTFilter : public GenericVideoFilter {
     int planes[3];
     int chroma;
     bool isPlus;
+    float* factorsLoad;
+    float* factorsStore8x8;
+    float* factorsStore4x4;
     float* factors8x8;
     float* factors4x4;
     size_t factorsSize;
@@ -172,13 +176,31 @@ DCTFilter::DCTFilter(PClip c, double* f8, double* f4, int dcount8, int dcount4,
 
     opt = check_opt(opt);
 
-    factorsSize = 64 + (opt == 3 ? 32 : 16);
+    factorsSize = 8 + 8 + 8 + 64 + (opt == 3 ? 32 : 16);
     size_t size = (factorsSize + (isPlus ? 0 : 128)) * sizeof(float);
-    factors8x8 = reinterpret_cast<float*>(_aligned_malloc(size, 32));
-    if (!factors8x8) {
+    factorsLoad = reinterpret_cast<float*>(_aligned_malloc(size, 32));
+    if (!factorsLoad) {
         throw std::runtime_error("failed to create table of factors.");
     }
+    factorsStore8x8 = factorsLoad + 8;
+    factorsStore4x4 = factorsStore8x8 + 8;
+    factors8x8 = factorsStore4x4 + 8;
     factors4x4 = factors8x8 + 64;
+
+    float load, store8, store4;
+    if (componentSize == 4) {
+        load = 1.0f;
+        store8 = 0.125f;
+        store4 = 0.25f;
+    } else {
+        int valmax = (1 << bitsPerComponent) - 1;
+        load = 1.0f / valmax;
+        store8 = 0.125f * valmax;
+        store4 = 0.25f * valmax;
+    }
+    std::fill_n(factorsLoad, 8, load);
+    std::fill_n(factorsStore8x8, 8, store8);
+    std::fill_n(factorsStore4x4, 8, store4);
 
     set_factors(factors8x8, 8, dcount8, f8, 0.1250f, opt);
     set_factors(factors4x4, 4, dcount4, f4, 0.250f, opt);
@@ -190,8 +212,8 @@ DCTFilter::DCTFilter(PClip c, double* f8, double* f4, int dcount8, int dcount4,
 
 DCTFilter::~DCTFilter()
 {
-    _aligned_free(factors8x8);
-    factors8x8 = nullptr;
+    _aligned_free(factorsLoad);
+    factorsLoad = nullptr;
 }
 
 
@@ -225,11 +247,13 @@ PVideoFrame __stdcall DCTFilter::GetFrame(int n, ise_t* env)
 
         if (mode != MODE_4X4) {
             mainProc8x8(srcp, dstp, spitch, dpitch, width8, height8, buff,
-                        factors8x8, bitsPerComponent);
+                        factors8x8, factorsLoad, factorsStore8x8,
+                        bitsPerComponent);
             if (width != width8) {
                 int offset = width8 * componentSize;
                 mainProc4x4(srcp + offset, dstp + offset, spitch, dpitch,
-                            4, height8, buff, factors4x4, bitsPerComponent);
+                            4, height8, buff, factors4x4, factorsLoad,
+                            factorsStore4x4, bitsPerComponent);
             }
             srcp += height8 * spitch;
             dstp += height8 * dpitch;
@@ -238,7 +262,8 @@ PVideoFrame __stdcall DCTFilter::GetFrame(int n, ise_t* env)
 
         if (height != 0) {
             mainProc4x4(srcp, dstp, spitch, dpitch, width, height, buff,
-                        factors4x4, bitsPerComponent);
+                        factors4x4, factorsLoad, factorsStore4x4,
+                        bitsPerComponent);
         }
     }
 

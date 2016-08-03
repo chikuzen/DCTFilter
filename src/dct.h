@@ -27,14 +27,13 @@ PERFORMANCE OF THIS SOFTWARE.
 
 typedef void(*fdct_idct_func_t)(
     const uint8_t* srcp, uint8_t* dstp, int src_pitch, int dst_pitch,
-    int rowsize, int height, float*, const float* factors, int bits);
+    int width, int height, float* buff, const float* factors,
+    const float* load, const float* store, int bits);
 
 
 fdct_idct_func_t get_main_proc_4x4(int component_size, int opt) noexcept;
 
 fdct_idct_func_t get_main_proc_8x8(int component_size, int opt) noexcept;
-
-const float* get_factors_array_in(int bits) noexcept;
 
 #endif
 

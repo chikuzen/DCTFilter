@@ -163,8 +163,8 @@ static void idct_8x8_llm_cpp(const float* s, float* d) noexcept
 template <typename T>
 static void fdct_idct_cpp(
         const uint8_t* srcp, uint8_t* dstp, int src_pitch, int dst_pitch,
-        int width, int height, float* buff0, const float* factors, int bits)
-        noexcept
+        int width, int height, float* buff0, const float* factors,
+        const float* load, const float* store, int) noexcept
 {
     const T* s = reinterpret_cast<const T*>(srcp);
     T* d = reinterpret_cast<T*>(dstp);
@@ -172,13 +172,10 @@ static void fdct_idct_cpp(
     src_pitch /= sizeof(T);
     dst_pitch /= sizeof(T);
 
-    const float f_in = 1.0f / ((1 << bits) - 1);
-    const float f_out = 0.125f * ((1 << bits) - 1);
-
     for (int y = 0; y < height; y += 8) {
         for (int x = 0; x < width; x += 8) {
 
-            src_to_float_8x8_cpp<T>(s + x, buff0, src_pitch, f_in);
+            src_to_float_8x8_cpp<T>(s + x, buff0, src_pitch, load[0]);
 
             transpose_8x8_cpp(buff0, buff1);
             fdct_8x8_llm_cpp(buff1, buff0);
@@ -194,7 +191,7 @@ static void fdct_idct_cpp(
             transpose_8x8_cpp(buff0, buff1);
             idct_8x8_llm_cpp(buff1, buff0);
 
-            float_to_dst_8x8_cpp<T>(buff0, d + x, dst_pitch, f_out);
+            float_to_dst_8x8_cpp<T>(buff0, d + x, dst_pitch, store[0]);
         }
         s += src_pitch * 8;
         d += dst_pitch * 8;
@@ -202,63 +199,6 @@ static void fdct_idct_cpp(
 }
 
 /******************* SIMD version ***************************/
-
-const float* get_factors_array_in(int bits) noexcept
-{
-    constexpr float f08 = 1.0f / ((1 << 8) - 1);
-    constexpr float f10 = 1.0f / ((1 << 10) - 1);
-    constexpr float f12 = 1.0f / ((1 << 12) - 1);
-    constexpr float f14 = 1.0f / ((1 << 14) - 1);
-    constexpr float f16 = 1.0f / ((1 << 16) - 1);
-    constexpr float f32 = 1.0f / ((1 << 1) - 1);
-
-    alignas(32) static const float array[] = {
-        f08, f08, f08, f08, f08, f08, f08, f08,
-        f10, f10, f10, f10, f10, f10, f10, f10,
-        f12, f12, f12, f12, f12, f12, f12, f12,
-        f14, f14, f14, f14, f14, f14, f14, f14,
-        f16, f16, f16, f16, f16, f16, f16, f16,
-        f32, f32, f32, f32, f32, f32, f32, f32,
-    };
-
-    switch (bits) {
-    case 10: return array + 8;
-    case 12: return array + 16;
-    case 14: return array + 24;
-    case 16: return array + 32;
-    case 32: return array + 40;
-    default: return array;
-    }
-}
-
-
-static const float* get_factors_array_out(int bits) noexcept
-{
-    constexpr float f08 = 0.1250f * ((1 << 8) - 1);
-    constexpr float f10 = 0.1250f * ((1 << 10) - 1);
-    constexpr float f12 = 0.1250f * ((1 << 12) - 1);
-    constexpr float f14 = 0.1250f * ((1 << 14) - 1);
-    constexpr float f16 = 0.1250f * ((1 << 16) - 1);
-    constexpr float f32 = 0.1250f * ((1 << 1) - 1);
-
-    alignas(32) static const float array[] = {
-        f08, f08, f08, f08, f08, f08, f08, f08,
-        f10, f10, f10, f10, f10, f10, f10, f10,
-        f12, f12, f12, f12, f12, f12, f12, f12,
-        f14, f14, f14, f14, f14, f14, f14, f14,
-        f16, f16, f16, f16, f16, f16, f16, f16,
-        f32, f32, f32, f32, f32, f32, f32, f32,
-    };
-
-    switch (bits) {
-    case 10: return array + 8;
-    case 12: return array + 16;
-    case 14: return array + 24;
-    case 16: return array + 32;
-    case 32: return array + 40;
-    default: return array;
-    }
-}
 
 template <bool HAS_SSE41>
 static __forceinline __m128i packus_epi32(
@@ -471,8 +411,8 @@ static void idct_8x8_llm_with_transpose_sse(const float* s, float* d) noexcept
 template <typename T, bool HAS_SSE41>
 static void fdct_idct_sse2(
         const uint8_t* srcp, uint8_t* dstp, int src_pitch, int dst_pitch,
-        int width, int height, float* buff0, const float* factors, int bits)
-        noexcept
+        int width, int height, float* buff0, const float* factors,
+        const float* load, const float* store, int bits) noexcept
 {
     const T* s = reinterpret_cast<const T*>(srcp);
     T* d = reinterpret_cast<T*>(dstp);
@@ -480,13 +420,10 @@ static void fdct_idct_sse2(
     src_pitch /= sizeof(T);
     dst_pitch /= sizeof(T);
 
-    static const float* in = get_factors_array_in(bits);
-    static const float* out = get_factors_array_out(bits);
-
     for (int y = 0; y < height; y += 8) {
         for (int x = 0; x < width; x += 8) {
 
-            src_to_float_8x8_sse2(s + x, buff0, src_pitch, in);
+            src_to_float_8x8_sse2(s + x, buff0, src_pitch, load);
 
             fdct_8x8_llm_with_transpose_sse(buff0, buff1);
             fdct_8x8_llm_with_transpose_sse(buff1, buff0);
@@ -500,7 +437,7 @@ static void fdct_idct_sse2(
             idct_8x8_llm_with_transpose_sse(buff0, buff1);
             idct_8x8_llm_with_transpose_sse(buff1, buff0);
 
-            float_to_dst_8x8_sse2<T, HAS_SSE41>(buff0, d + x, dst_pitch, out, bits);
+            float_to_dst_8x8_sse2<T, HAS_SSE41>(buff0, d + x, dst_pitch, store, bits);
         }
         s += src_pitch * 8;
         d += dst_pitch * 8;
@@ -677,18 +614,18 @@ static __forceinline void store_x8_to_dst_avx2(
 template <typename T>
 static void fdct_idct_8x8_avx2(
         const T* srcp, T* dstp, const float* f, int spitch, int dpitch,
-        const float* in, const float* out) noexcept
+        const float* load, const float* store) noexcept
 {
-    __m256 factor = _mm256_load_ps(in);
+    const __m256 factor_load = _mm256_load_ps(load);
 
-    __m256 s0 = load_and_cvt_to_float_x8_avx2(srcp + spitch * 0, factor);
-    __m256 s1 = load_and_cvt_to_float_x8_avx2(srcp + spitch * 1, factor);
-    __m256 s2 = load_and_cvt_to_float_x8_avx2(srcp + spitch * 2, factor);
-    __m256 s3 = load_and_cvt_to_float_x8_avx2(srcp + spitch * 3, factor);
-    __m256 s4 = load_and_cvt_to_float_x8_avx2(srcp + spitch * 4, factor);
-    __m256 s5 = load_and_cvt_to_float_x8_avx2(srcp + spitch * 5, factor);
-    __m256 s6 = load_and_cvt_to_float_x8_avx2(srcp + spitch * 6, factor);
-    __m256 s7 = load_and_cvt_to_float_x8_avx2(srcp + spitch * 7, factor);
+    __m256 s0 = load_and_cvt_to_float_x8_avx2(srcp + spitch * 0, factor_load);
+    __m256 s1 = load_and_cvt_to_float_x8_avx2(srcp + spitch * 1, factor_load);
+    __m256 s2 = load_and_cvt_to_float_x8_avx2(srcp + spitch * 2, factor_load);
+    __m256 s3 = load_and_cvt_to_float_x8_avx2(srcp + spitch * 3, factor_load);
+    __m256 s4 = load_and_cvt_to_float_x8_avx2(srcp + spitch * 4, factor_load);
+    __m256 s5 = load_and_cvt_to_float_x8_avx2(srcp + spitch * 5, factor_load);
+    __m256 s6 = load_and_cvt_to_float_x8_avx2(srcp + spitch * 6, factor_load);
+    __m256 s7 = load_and_cvt_to_float_x8_avx2(srcp + spitch * 7, factor_load);
 
     transpose_8x8_avx(s0, s1, s2, s3, s4, s5, s6, s7);
     fdct_8x8_llm_fma3(s0, s1, s2, s3, s4, s5, s6, s7);
@@ -709,36 +646,33 @@ static void fdct_idct_8x8_avx2(
     transpose_8x8_avx(s0, s1, s2, s3, s4, s5, s6, s7);
     idct_8x8_llm_fma3(s0, s1, s2, s3, s4, s5, s6, s7);
 
-    factor = _mm256_load_ps(out);
+    const __m256 factor_store = _mm256_load_ps(store);
 
-    store_x8_to_dst_avx2(s0, dstp + 0 * dpitch, factor);
-    store_x8_to_dst_avx2(s1, dstp + 1 * dpitch, factor);
-    store_x8_to_dst_avx2(s2, dstp + 2 * dpitch, factor);
-    store_x8_to_dst_avx2(s3, dstp + 3 * dpitch, factor);
-    store_x8_to_dst_avx2(s4, dstp + 4 * dpitch, factor);
-    store_x8_to_dst_avx2(s5, dstp + 5 * dpitch, factor);
-    store_x8_to_dst_avx2(s6, dstp + 6 * dpitch, factor);
-    store_x8_to_dst_avx2(s7, dstp + 7 * dpitch, factor);
+    store_x8_to_dst_avx2(s0, dstp + 0 * dpitch, factor_store);
+    store_x8_to_dst_avx2(s1, dstp + 1 * dpitch, factor_store);
+    store_x8_to_dst_avx2(s2, dstp + 2 * dpitch, factor_store);
+    store_x8_to_dst_avx2(s3, dstp + 3 * dpitch, factor_store);
+    store_x8_to_dst_avx2(s4, dstp + 4 * dpitch, factor_store);
+    store_x8_to_dst_avx2(s5, dstp + 5 * dpitch, factor_store);
+    store_x8_to_dst_avx2(s6, dstp + 6 * dpitch, factor_store);
+    store_x8_to_dst_avx2(s7, dstp + 7 * dpitch, factor_store);
 }
 
 
 template <typename T>
 static void fdct_idct_avx2(
         const uint8_t* srcp, uint8_t* dstp, int src_pitch, int dst_pitch,
-        int width, int height, float*, const float* factors, int bits)
-        noexcept
+        int width, int height, float*, const float* factors, const float* load,
+        const float* store, int) noexcept
 {
     const T* s = reinterpret_cast<const T*>(srcp);
     T* d = reinterpret_cast<T*>(dstp);
     src_pitch /= sizeof(T);
     dst_pitch /= sizeof(T);
 
-    const float* in = get_factors_array_in(bits);
-    const float* out = get_factors_array_out(bits);
-
     for (int y = 0; y < height; y += 8) {
         for (int x = 0; x < width; x += 8) {
-            fdct_idct_8x8_avx2<T>(s + x, d + x, factors, src_pitch, dst_pitch, in, out);
+            fdct_idct_8x8_avx2<T>(s + x, d + x, factors, src_pitch, dst_pitch, load, store);
         }
         s += src_pitch * 8;
         d += dst_pitch * 8;
