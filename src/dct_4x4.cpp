@@ -29,46 +29,6 @@ PERFORMANCE OF THIS SOFTWARE.
 #include "dct.h"
 
 
-template <typename T>
-static void src_to_float_4x4_cpp(
-    const T* srcp, float* dstp, int spitch, const float factor) noexcept
-{
-    for (int y = 0; y < 4; ++y) {
-        for (int x = 0; x < 4; ++x) {
-            dstp[x] = sizeof(T) == 4 ? srcp[x] : factor * srcp[x];
-        }
-        dstp += 4;
-        srcp += spitch;
-    }
-}
-
-
-template <typename T>
-static void float_to_dst_4x4_cpp(
-    const float* srcp, T* dstp, int dpitch, const float factor) noexcept
-{
-    for (int y = 0; y < 4; ++y) {
-        for (int x = 0; x < 4; ++x) {
-            dstp[x] = static_cast<T>(factor * srcp[x]);
-        }
-        srcp += 4;
-        dstp += dpitch;
-    }
-}
-
-
-static void transpose_4x4_cpp(const float* s, float* d) noexcept
-{
-    for (int y = 0; y < 4; ++y) {
-        for (int x = 0; x < 4; ++x) {
-            d[4 * x] = s[x];
-        }
-        s += 4;
-        ++d;
-    }
-}
-
-
 constexpr float r2 = 1.3065630198f; // cos(2 / 16.0 * PI) * SQRT2
 constexpr float r6 = 0.5411961079f; // cos(6 / 16.0 * PI) * SQRT2
 
@@ -77,8 +37,8 @@ static void fdct_4x4_llm_cpp(const float* s, float* d) noexcept
 {
     for(int i = 0; i < 4; ++i) {
         float p03 = s[0] + s[3];
-        float p12 = s[1] + s[2];
         float m03 = s[0] - s[3];
+        float p12 = s[1] + s[2];
         float m12 = s[1] - s[2];
 
         d[0] = p03 + p12;
@@ -129,23 +89,23 @@ static void fdct_idct_cpp(
     for (int y = 0; y < height; y += 4) {
         for (int x = 0; x < width; x += 4) {
 
-            src_to_float_4x4_cpp<T>(s + x, buff0, src_pitch, load[0]);
+            src_to_float_XxX_cpp<T, 4>(s + x, buff0, src_pitch, load[0]);
 
-            transpose_4x4_cpp(buff0, buff1);
+            transpose_XxX_cpp<4>(buff0, buff1);
             fdct_4x4_llm_cpp(buff1, buff0);
-            transpose_4x4_cpp(buff0, buff1);
+            transpose_XxX_cpp<4>(buff0, buff1);
             fdct_4x4_llm_cpp(buff1, buff0);
 
             for (int i = 0; i < 16; ++i) {
                 buff0[i] *= factors[i];
             }
 
-            transpose_4x4_cpp(buff0, buff1);
+            transpose_XxX_cpp<4>(buff0, buff1);
             idct_4x4_llm_cpp(buff1, buff0);
-            transpose_4x4_cpp(buff0, buff1);
+            transpose_XxX_cpp<4>(buff0, buff1);
             idct_4x4_llm_cpp(buff1, buff0);
 
-            float_to_dst_4x4_cpp<T>(buff0, d + x, dst_pitch, store[0]);
+            float_to_dst_XxX_cpp<T, 4>(buff0, d + x, dst_pitch, store[0]);
         }
         s += src_pitch * 4;
         d += dst_pitch * 4;

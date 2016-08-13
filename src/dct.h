@@ -35,5 +35,46 @@ fdct_idct_func_t get_main_proc_4x4(int component_size, int opt) noexcept;
 
 fdct_idct_func_t get_main_proc_8x8(int component_size, int opt) noexcept;
 
+
+template <typename T, int SIZE>
+static void src_to_float_XxX_cpp(
+        const T* srcp, float* dstp, const int spitch, const float factor) noexcept
+{
+    for (int y = 0; y < SIZE; ++y) {
+        for (int x = 0; x < SIZE; ++x) {
+            dstp[x] = sizeof(T) == 4 ? srcp[x] : factor * srcp[x];
+        }
+        dstp += SIZE;
+        srcp += spitch;
+    }
+}
+
+
+template <typename T, int SIZE>
+static void float_to_dst_XxX_cpp(
+        const float* srcp, T* dstp, const int dpitch, const float factor) noexcept
+{
+    for (int y = 0; y < SIZE; ++y) {
+        for (int x = 0; x < SIZE; ++x) {
+            dstp[x] = static_cast<T>(factor * srcp[x]);
+        }
+        srcp += SIZE;
+        dstp += dpitch;
+    }
+}
+
+
+template <int SIZE>
+static void transpose_XxX_cpp(const float* s, float* d) noexcept
+{
+    for (int y = 0; y < SIZE; ++y) {
+        for (int x = 0; x < SIZE; ++x) {
+            d[SIZE * x] = s[x];
+        }
+        s += SIZE;
+        ++d;
+    }
+}
+
 #endif
 
