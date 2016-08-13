@@ -34,7 +34,7 @@ PERFORMANCE OF THIS SOFTWARE.
 
 
 
-#define DCT_FILTER_VERSION "0.4.0"
+#define DCT_FILTER_VERSION "0.4.1"
 
 
 typedef IScriptEnvironment ise_t;
@@ -101,6 +101,7 @@ enum {
 };
 
 class DCTFilter : public GenericVideoFilter {
+    typedef IScriptEnvironment2 ise2_t;
     int numPlanes;
     int planes[3];
     int chroma;
@@ -120,9 +121,9 @@ class DCTFilter : public GenericVideoFilter {
 
 public:
     DCTFilter(PClip child, double* factor8x8, double* factor4x4, int dcount8x8,
-              int dcount4x4, int chroma, int opt, int mode, bool is_plus);
+              int dcount4x4, int chroma, int opt, int mode, ise_t* env);
     PVideoFrame __stdcall GetFrame(int n, ise_t* env);
-    ~DCTFilter();
+    ~DCTFilter() {}
     int __stdcall SetCacheHints(int hints, int)
     {
         return hints == CACHE_GET_MTMODE ? MT_NICE_FILTER : 0;
@@ -131,8 +132,9 @@ public:
 
 
 DCTFilter::DCTFilter(PClip c, double* f8, double* f4, int dcount8, int dcount4,
-                     int ch, int opt, int m, bool ip)
-        : GenericVideoFilter(c), chroma(ch), isPlus(ip), mode(m)
+                     int ch, int opt, int m, ise_t* env) :
+        GenericVideoFilter(c), chroma(ch), mode(m),
+        isPlus(env->FunctionExists("SetFilterMTMode"))
 {
     if (!vi.IsPlanar()) {
         throw std::runtime_error("input is not planar format.");
@@ -177,11 +179,23 @@ DCTFilter::DCTFilter(PClip c, double* f8, double* f4, int dcount8, int dcount4,
     opt = check_opt(opt);
 
     factorsSize = 8 + 8 + 8 + 64 + (opt == 3 ? 32 : 16);
-    size_t size = (factorsSize + (isPlus ? 0 : 128)) * sizeof(float);
-    factorsLoad = reinterpret_cast<float*>(_aligned_malloc(size, 32));
-    if (!factorsLoad) {
-        throw std::runtime_error("failed to create table of factors.");
+    void* ptr;
+    if (!isPlus) {
+        ptr = _aligned_malloc((factorsSize + 128) * sizeof(float), 32);
+        if (!ptr) {
+            throw std::runtime_error("failed to create table of factors.");
+        }
+        env->AtExit([](void* p, ise_t*) { _aligned_free(p); p = nullptr; }, ptr);
+    } else {
+        ptr = static_cast<ise2_t*>(
+            env)->Allocate(factorsSize * sizeof(float), 32, AVS_NORMAL_ALLOC);
+        if (!ptr) {
+            throw std::runtime_error("failed to create table of factors.");
+        }
+        env->AtExit([](void* p, ise_t* e) {
+            static_cast<ise2_t*>(e)->Free(p); p = nullptr; }, ptr);
     }
+    factorsLoad = reinterpret_cast<float*>(ptr);
     factorsStore8x8 = factorsLoad + 8;
     factorsStore4x4 = factorsStore8x8 + 8;
     factors8x8 = factorsStore4x4 + 8;
@@ -210,13 +224,6 @@ DCTFilter::DCTFilter(PClip c, double* f8, double* f4, int dcount8, int dcount4,
 }
 
 
-DCTFilter::~DCTFilter()
-{
-    _aligned_free(factorsLoad);
-    factorsLoad = nullptr;
-}
-
-
 PVideoFrame __stdcall DCTFilter::GetFrame(int n, ise_t* env)
 {
     auto src = child->GetFrame(n, env);
@@ -224,9 +231,9 @@ PVideoFrame __stdcall DCTFilter::GetFrame(int n, ise_t* env)
 
     float* buff;
     if (!isPlus) {
-        buff = factors8x8 + factorsSize;
+        buff = factorsLoad + factorsSize;
     } else {
-        buff = reinterpret_cast<float*>(static_cast<IScriptEnvironment2*>(
+        buff = reinterpret_cast<float*>(static_cast<ise2_t*>(
             env)->Allocate(128 * sizeof(float), 32, AVS_POOLED_ALLOC));
         if (!buff) {
             env->ThrowError("DCTFilter: failed to allocate temporal buffer.");
@@ -279,7 +286,7 @@ PVideoFrame __stdcall DCTFilter::GetFrame(int n, ise_t* env)
     }
 
     if (isPlus) {
-        static_cast<IScriptEnvironment2*>(env)->Free(buff);
+        static_cast<ise2_t*>(env)->Free(buff);
     }
 
     return dst;
@@ -308,8 +315,8 @@ static AVSValue __cdecl create_8(AVSValue args, void*, ise_t* env)
 
     try {
         return new DCTFilter(
-            args[0].AsClip(), f8, f4, 0, 0, args[13].AsInt(1), args[14].AsInt(-1),
-            MODE_8X8, env->FunctionExists("SetFilterMTMode"));
+            args[0].AsClip(), f8, f4, 0, 0, args[13].AsInt(1),
+            args[14].AsInt(-1), MODE_8X8, env);
     } catch (std::runtime_error& e) {
         env->ThrowError("DCTFilter8: %s", e.what());
     }
@@ -332,8 +339,7 @@ static AVSValue __cdecl create_8d(AVSValue args, void*, ise_t* env)
     try {
         return new DCTFilter(
             args[0].AsClip(), nullptr, nullptr, diag_count8, diag_count4,
-            args[3].AsInt(1), args[4].AsInt(-1), MODE_8X8,
-            env->FunctionExists("SetFilterMTMode"));
+            args[3].AsInt(1), args[4].AsInt(-1), MODE_8X8, env);
     } catch (std::runtime_error& e) {
         env->ThrowError("DCTFilter8D: %s", e.what());
     }
@@ -354,8 +360,8 @@ static AVSValue __cdecl create_4(AVSValue args, void*, ise_t* env)
 
     try {
         return new DCTFilter(
-            args[0].AsClip(), nullptr, f4, 0, 0, args[5].AsInt(1), args[6].AsInt(-1),
-            MODE_4X4, env->FunctionExists("SetFilterMTMode"));
+            args[0].AsClip(), nullptr, f4, 0, 0, args[5].AsInt(1),
+            args[6].AsInt(-1), MODE_4X4, env);
     } catch (std::runtime_error& e) {
         env->ThrowError("DCTFilter4: %s", e.what());
     }
@@ -373,7 +379,7 @@ static AVSValue __cdecl create_4d(AVSValue args, void*, ise_t* env)
     try {
         return new DCTFilter(
             args[0].AsClip(), nullptr, nullptr, 0, diag_count4, args[2].AsInt(1),
-            args[3].AsInt(-1), MODE_4X4, env->FunctionExists("SetFilterMTMode"));
+            args[3].AsInt(-1), MODE_4X4, env);
     } catch (std::runtime_error& e) {
         env->ThrowError("DCTFilter4D: %s", e.what());
     }
