@@ -2,7 +2,7 @@
 	This plugin is a rewrite of DctFilter for avisynth.
 
 ### Version:
-	0.4.0
+	0.5.0
 
 ### Requirement:
 	- Windows Vista sp2 or later
@@ -17,7 +17,7 @@ DCTFilter8(clip, float, float, float, float, float, float, float, float,
 ```
 Execute 8x8 DCT to image.
 
-	clip: planar 8bit/16bit/float formats are supported.
+	clip: All planar formats(8/10/12/14/16bit and float, YUV/RGB with/without alpha) are supported.
 
 	float: All of which must be specified as in the range (0.0 <= x <= 1.0).
 		These correspond to scaling factors for the 8 rows and columns of the 8x8 DCT blocks.
@@ -30,9 +30,10 @@ Execute 8x8 DCT to image.
 		These correspond to scaling factors for the 4 rows and columns of the 4x4 DCT blocks.
 		The leftmost parameter corresponds to the top row, left column.
 
-	chroma:	0 = copy from source
+	chroma:	0 = copy from source (on RGB, B and R planes are copied).
 			1 = process (default)
 			2 = do not process nor copy, output will be trash.
+			note: alpha will be copied anytime. 
 
 	opt: Specify which CPU optimization are used.
 		0 = use c++ routine.

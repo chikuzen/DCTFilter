@@ -95,6 +95,21 @@ static void set_factors(
 }
 
 
+static int get_bitdepth(int pixel_type)
+{
+    int bits = pixel_type & VideoInfo::CS_Sample_Bits_Mask;
+    switch (bits) {
+    case VideoInfo::CS_Sample_Bits_8: return 8;
+    case VideoInfo::CS_Sample_Bits_10: return 10;
+    case VideoInfo::CS_Sample_Bits_12: return 12;
+    case VideoInfo::CS_Sample_Bits_14: return 14;
+    case VideoInfo::CS_Sample_Bits_16: return 16;
+    case VideoInfo::CS_Sample_Bits_32: return 32;
+    }
+    return 0;
+}
+
+
 enum {
     MODE_8X8,
     MODE_4X4,
@@ -115,6 +130,7 @@ class DCTFilter : public GenericVideoFilter {
     int componentSize;
     int bitsPerComponent;
     int mode;
+    bool hasAlpha;
 
     fdct_idct_func_t mainProc8x8;
     fdct_idct_func_t mainProc4x4;
@@ -158,14 +174,16 @@ DCTFilter::DCTFilter(PClip c, double* f8, double* f4, int dcount8, int dcount4,
         planes[0] = PLANAR_Y;
         planes[1] = PLANAR_U;
         planes[2] = PLANAR_V;
+        hasAlpha = vi.IsYUVA();
     } else {
         planes[0] = PLANAR_G;
         planes[1] = PLANAR_B;
         planes[2] = PLANAR_R;
+        hasAlpha = vi.IsPlanarRGBA();
     }
 
     componentSize = vi.BytesFromPixels(1);
-    bitsPerComponent = componentSize * 8;
+    bitsPerComponent = get_bitdepth(vi.pixel_type);
 
     if (chroma == 1) {
         int w = vi.width >> vi.GetPlaneWidthSubsampling(planes[1]);
@@ -285,6 +303,12 @@ PVideoFrame __stdcall DCTFilter::GetFrame(int n, ise_t* env)
                     src->GetReadPtr(planes[2]), spitch, rowsize, height);
     }
 
+    if (hasAlpha) {
+        env->BitBlt(dst->GetWritePtr(PLANAR_A), dst->GetPitch(PLANAR_A),
+                    src->GetReadPtr(PLANAR_A), src->GetPitch(PLANAR_A),
+                    dst->GetRowSize(PLANAR_A), dst->GetHeight(PLANAR_A));
+    }
+
     if (isPlus) {
         static_cast<ise2_t*>(env)->Free(buff);
     }
@@ -387,7 +411,7 @@ static AVSValue __cdecl create_4d(AVSValue args, void*, ise_t* env)
 }
 
 
-static const AVS_Linkage* AVS_linkage = nullptr;
+const AVS_Linkage* AVS_linkage = nullptr;
 
 
 extern "C" __declspec(dllexport) const char* __stdcall
