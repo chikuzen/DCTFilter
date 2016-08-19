@@ -34,7 +34,7 @@ PERFORMANCE OF THIS SOFTWARE.
 
 
 
-#define DCT_FILTER_VERSION "0.4.1"
+#define DCT_FILTER_VERSION "0.4.2"
 
 
 typedef IScriptEnvironment ise_t;
@@ -50,15 +50,10 @@ static int check_opt(int opt)
         return 0;
     } else if (opt == 1 || !has_sse41()) {
         return 1;
-#if !defined(__AVX2__)
-    }
-    return 2;
-#else
     } else if (opt == 2 || !has_avx2()){
         return 2;
     }
     return 3;
-#endif
 }
 
 
